@@ -1,10 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const crypto = require('crypto');
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
+const multer = require('multer');
 const { Server } = require('socket.io');
 
 const app = express();
@@ -12,67 +12,43 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-const DB_PATH = path.join(__dirname, 'db.json');
-const VOICE_ROOM = 'voice:lobby';
+const ROOT = __dirname;
+const DATA_FILE = path.join(ROOT, 'data.json');
+const UPLOAD_DIR = path.join(ROOT, 'uploads');
+const MAX_UPLOAD_BYTES = 1024 * 1024 * 1024; // 1 GB
 
-const sessionMiddleware = session({
-  secret: process.env.SESSION_SECRET || 'pulsecord-secret-change-me',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    httpOnly: true,
-    sameSite: 'lax'
-  }
-});
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(sessionMiddleware);
-app.use(express.static(__dirname));
-io.engine.use(sessionMiddleware);
-
-function createId(prefix = '') {
-  return prefix + crypto.randomBytes(8).toString('hex');
+function blankDB() {
+  return { users: [], videos: [], comments: [] };
 }
 
-function readDB() {
-  const fallback = { users: [], messages: [] };
-  if (!fs.existsSync(DB_PATH)) {
-    fs.writeFileSync(DB_PATH, JSON.stringify(fallback, null, 2));
-    return fallback;
-  }
+function loadDB() {
   try {
-    const parsed = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+    if (!fs.existsSync(DATA_FILE)) return blankDB();
+    const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     return {
       users: Array.isArray(parsed.users) ? parsed.users : [],
-      messages: Array.isArray(parsed.messages) ? parsed.messages : []
+      videos: Array.isArray(parsed.videos) ? parsed.videos : [],
+      comments: Array.isArray(parsed.comments) ? parsed.comments : []
     };
   } catch {
-    fs.writeFileSync(DB_PATH, JSON.stringify(fallback, null, 2));
-    return fallback;
+    return blankDB();
   }
 }
 
-let db = readDB();
-let saveTimer = null;
+let db = loadDB();
+
 function saveDB() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
-  }, 40);
+  fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+}
+
+function uid(prefix) {
+  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function normalizeUsername(value) {
   return String(value || '').trim();
-}
-
-function publicUser(user) {
-  if (!user) return null;
-  return {
-    id: user.id,
-    username: user.username,
-    createdAt: user.createdAt
-  };
 }
 
 function validateUsername(username) {
@@ -83,91 +59,91 @@ function validatePassword(password) {
   return /^[A-Za-z0-9_-]{6,20}$/.test(password);
 }
 
+function publicUser(user) {
+  if (!user) return null;
+  return { id: user.id, username: user.username, createdAt: user.createdAt };
+}
+
+function publicComment(comment) {
+  const author = db.users.find(u => u.id === comment.userId);
+  return { id: comment.id, text: comment.text, createdAt: comment.createdAt, author: publicUser(author) };
+}
+
+function publicVideo(video) {
+  const author = db.users.find(u => u.id === video.userId);
+  const comments = db.comments.filter(c => c.videoId === video.id).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  return {
+    id: video.id,
+    title: video.title,
+    description: video.description,
+    filename: video.filename,
+    mimeType: video.mimeType,
+    size: video.size,
+    createdAt: video.createdAt,
+    author: publicUser(author),
+    comments: comments.map(publicComment)
+  };
+}
+
+function sortVideos(videos) {
+  return [...videos].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
 function authRequired(req, res, next) {
-  const userId = req.session.userId;
-  const user = db.users.find(u => u.id === userId);
+  if (!req.session.userId) return res.status(401).json({ error: 'Not signed in' });
+  const user = db.users.find(u => u.id === req.session.userId);
   if (!user) return res.status(401).json({ error: 'Not signed in' });
   req.user = user;
   next();
 }
 
-function isUsernameTaken(username) {
-  return db.users.some(u => u.username.toLowerCase() === username.toLowerCase());
+const sessionMiddleware = session({
+  secret: process.env.SESSION_SECRET || 'retrotube-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { httpOnly: true, sameSite: 'lax' }
+});
+
+app.use(sessionMiddleware);
+app.use(express.json());
+app.use('/uploads', express.static(UPLOAD_DIR));
+app.use(express.static(ROOT));
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').slice(0, 16);
+    cb(null, `${uid('vid_')}${ext || '.bin'}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype && file.mimetype.startsWith('video/')) return cb(null, true);
+    cb(new Error('Only video files are allowed'));
+  }
+});
+
+function emitLibraryUpdate() {
+  io.emit('library:update');
 }
 
-function getVoiceParticipants() {
-  return Array.from(io.sockets.adapter.rooms.get(VOICE_ROOM) || [])
-    .map(socketId => {
-      const socket = io.sockets.sockets.get(socketId);
-      if (!socket?.data?.voiceUser) return null;
-      return {
-        socketId,
-        userId: socket.data.voiceUser.id,
-        username: socket.data.voiceUser.username,
-        muted: !!socket.data.voiceMuted,
-        deafened: !!socket.data.voiceDeafened,
-        joinedAt: socket.data.voiceJoinedAt || null
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.username.localeCompare(b.username, undefined, { sensitivity: 'base' }));
+function emitVideoChanged(videoId) {
+  io.emit('video:changed', videoId);
 }
 
-function buildState(user) {
-  const users = db.users
-    .map(u => ({
-      ...publicUser(u),
-      online: Array.from(io.sockets.sockets.values()).some(socket => socket.data?.voiceUser?.id === u.id || socket.request.session?.userId === u.id),
-      inVoice: Array.from(io.sockets.sockets.values()).some(socket => socket.data?.voiceUser?.id === u.id),
-      muted: Array.from(io.sockets.sockets.values()).some(socket => socket.data?.voiceUser?.id === u.id && socket.data.voiceMuted),
-      deafened: Array.from(io.sockets.sockets.values()).some(socket => socket.data?.voiceUser?.id === u.id && socket.data.voiceDeafened)
-    }))
-    .sort((a, b) => a.username.localeCompare(b.username, undefined, { sensitivity: 'base' }));
-
-  const messages = db.messages
-    .slice(-200)
-    .map(m => ({
-      ...m,
-      author: publicUser(db.users.find(u => u.id === m.userId))
-    }));
-
-  return {
-    me: publicUser(user),
-    users,
-    messages,
-    voiceParticipants: getVoiceParticipants()
-  };
-}
-
-function emitRoomState() {
-  io.to(VOICE_ROOM).emit('voice:participants', { participants: getVoiceParticipants() });
-  io.emit('state:changed');
-}
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+app.get('/', (_req, res) => {
+  res.sendFile(path.join(ROOT, 'index.html'));
 });
 
 app.get('/api/me', authRequired, (req, res) => {
   res.json({ user: publicUser(req.user) });
 });
 
-app.get('/api/state', authRequired, (req, res) => {
-  res.json(buildState(req.user));
-});
-
-app.get('/api/users', authRequired, (req, res) => {
-  const q = String(req.query.q || '').trim().toLowerCase();
-  const users = db.users
-    .filter(u => !q || u.username.toLowerCase().includes(q))
-    .map(u => ({
-      ...publicUser(u),
-      online: Array.from(io.sockets.sockets.values()).some(socket => socket.data?.voiceUser?.id === u.id || socket.request.session?.userId === u.id),
-      inVoice: Array.from(io.sockets.sockets.values()).some(socket => socket.data?.voiceUser?.id === u.id),
-      muted: Array.from(io.sockets.sockets.values()).some(socket => socket.data?.voiceUser?.id === u.id && socket.data.voiceMuted),
-      deafened: Array.from(io.sockets.sockets.values()).some(socket => socket.data?.voiceUser?.id === u.id && socket.data.voiceDeafened)
-    }))
-    .sort((a, b) => a.username.localeCompare(b.username, undefined, { sensitivity: 'base' }));
+app.get('/api/users', authRequired, (_req, res) => {
+  const users = db.users.map(publicUser).sort((a, b) => a.username.localeCompare(b.username, undefined, { sensitivity: 'base' }));
   res.json({ users });
 });
 
@@ -185,12 +161,12 @@ app.post('/api/signup', async (req, res) => {
   if (password !== confirmPassword) {
     return res.status(400).json({ error: 'Passwords do not match' });
   }
-  if (isUsernameTaken(username)) {
+  if (db.users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
     return res.status(400).json({ error: 'Username already exists' });
   }
 
   const user = {
-    id: createId('usr_'),
+    id: uid('usr_'),
     username,
     passwordHash: await bcrypt.hash(password, 10),
     createdAt: new Date().toISOString()
@@ -199,7 +175,8 @@ app.post('/api/signup', async (req, res) => {
   db.users.push(user);
   saveDB();
   req.session.userId = user.id;
-  res.json({ ok: true, user: publicUser(user), state: buildState(user) });
+  res.json({ ok: true, user: publicUser(user) });
+  emitLibraryUpdate();
 });
 
 app.post('/api/login', async (req, res) => {
@@ -213,153 +190,106 @@ app.post('/api/login', async (req, res) => {
 
   const user = db.users.find(u => u.username.toLowerCase() === username.toLowerCase());
   if (!user) return res.status(400).json({ error: 'Invalid username or password' });
-
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return res.status(400).json({ error: 'Invalid username or password' });
 
   req.session.userId = user.id;
-  res.json({ ok: true, user: publicUser(user), state: buildState(user) });
+  res.json({ ok: true, user: publicUser(user) });
 });
 
 app.post('/api/logout', authRequired, (req, res) => {
-  req.session.destroy(() => {
-    res.json({ ok: true });
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+app.get('/api/videos', authRequired, (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const videos = sortVideos(db.videos)
+    .filter(v => {
+      if (!q) return true;
+      const author = db.users.find(u => u.id === v.userId);
+      return [v.title, v.description, author?.username || ''].join(' ').toLowerCase().includes(q);
+    })
+    .map(publicVideo);
+  res.json({ videos });
+});
+
+app.get('/api/videos/:id', authRequired, (req, res) => {
+  const video = db.videos.find(v => v.id === req.params.id);
+  if (!video) return res.status(404).json({ error: 'Video not found' });
+  res.json({ video: publicVideo(video) });
+});
+
+app.post('/api/upload', authRequired, (req, res) => {
+  upload.single('video')(req, res, err => {
+    if (err) {
+      const message = err.code === 'LIMIT_FILE_SIZE'
+        ? 'File is larger than 1 GB'
+        : err.message || 'Upload failed';
+      return res.status(400).json({ error: message });
+    }
+
+    const title = String(req.body.title || '').trim();
+    const description = String(req.body.description || '').trim();
+    if (!title) return res.status(400).json({ error: 'Title is required' });
+    if (!req.file) return res.status(400).json({ error: 'Video file is required' });
+
+    const video = {
+      id: uid('vid_'),
+      userId: req.user.id,
+      title,
+      description,
+      filename: req.file.filename,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+      createdAt: new Date().toISOString()
+    };
+
+    db.videos.push(video);
+    saveDB();
+    const payload = publicVideo(video);
+    res.json({ ok: true, video: payload });
+    emitLibraryUpdate();
+    emitVideoChanged(video.id);
   });
 });
 
-app.get('/api/messages', authRequired, (req, res) => {
-  const messages = db.messages.map(m => ({
-    ...m,
-    author: publicUser(db.users.find(u => u.id === m.userId))
-  }));
-  res.json({ messages });
-});
+app.post('/api/videos/:id/comments', authRequired, (req, res) => {
+  const video = db.videos.find(v => v.id === req.params.id);
+  if (!video) return res.status(404).json({ error: 'Video not found' });
 
-app.post('/api/messages', authRequired, (req, res) => {
-  const content = String(req.body.content || '').trim();
-  if (!content) return res.status(400).json({ error: 'Message cannot be empty' });
+  const text = String(req.body.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'Comment cannot be empty' });
 
-  const message = {
-    id: createId('msg_'),
+  const comment = {
+    id: uid('com_'),
+    videoId: video.id,
     userId: req.user.id,
-    content,
+    text,
     createdAt: new Date().toISOString()
   };
-  db.messages.push(message);
-  if (db.messages.length > 500) db.messages = db.messages.slice(-500);
-  saveDB();
 
-  const payload = { ...message, author: publicUser(req.user) };
-  io.emit('message:new', payload);
-  io.emit('state:changed');
-  res.json({ ok: true, message: payload });
+  db.comments.push(comment);
+  saveDB();
+  res.json({ ok: true, comment: publicComment(comment) });
+  emitLibraryUpdate();
+  emitVideoChanged(video.id);
+});
+
+app.use((err, _req, res, _next) => {
+  console.error(err);
+  res.status(500).json({ error: 'Server error' });
 });
 
 io.use((socket, next) => {
   sessionMiddleware(socket.request, {}, next);
 });
 
-function getSocketUser(socket) {
+io.on('connection', socket => {
   const userId = socket.request.session?.userId;
-  return db.users.find(u => u.id === userId) || null;
-}
-
-function syncVoiceState() {
-  io.to(VOICE_ROOM).emit('voice:participants', { participants: getVoiceParticipants() });
-  io.emit('state:changed');
-}
-
-io.on('connection', (socket) => {
-  const user = getSocketUser(socket);
-  if (!user) return;
-
-  socket.data.user = user;
-  socket.data.isLoggedIn = true;
-
-  socket.on('voice:join', async () => {
-    const freshUser = getSocketUser(socket);
-    if (!freshUser) return;
-    socket.data.voiceUser = publicUser(freshUser);
-    socket.data.voiceMuted = false;
-    socket.data.voiceDeafened = false;
-    socket.data.voiceJoinedAt = new Date().toISOString();
-    socket.join(VOICE_ROOM);
-
-    const roomPeers = Array.from(io.sockets.adapter.rooms.get(VOICE_ROOM) || [])
-      .filter(id => id !== socket.id)
-      .map(id => io.sockets.sockets.get(id))
-      .filter(Boolean)
-      .map(s => ({
-        socketId: s.id,
-        username: s.data?.voiceUser?.username || 'Unknown'
-      }));
-
-    socket.emit('voice:participants', { participants: getVoiceParticipants() });
-    socket.emit('voice:peers', { peers: roomPeers });
-    socket.to(VOICE_ROOM).emit('voice:peer-joined', {
-      socketId: socket.id,
-      username: socket.data.voiceUser.username
-    });
-    syncVoiceState();
-  });
-
-  socket.on('voice:status', ({ muted, deafened }) => {
-    if (!socket.data.voiceUser) return;
-    socket.data.voiceMuted = !!muted;
-    socket.data.voiceDeafened = !!deafened;
-    syncVoiceState();
-  });
-
-  socket.on('voice:leave', () => {
-    if (socket.rooms.has(VOICE_ROOM)) {
-      socket.leave(VOICE_ROOM);
-      socket.to(VOICE_ROOM).emit('voice:peer-left', { socketId: socket.id });
-      delete socket.data.voiceUser;
-      delete socket.data.voiceMuted;
-      delete socket.data.voiceDeafened;
-      delete socket.data.voiceJoinedAt;
-      syncVoiceState();
-    }
-  });
-
-  socket.on('voice:signal', ({ to, data }) => {
-    if (!to || !data) return;
-    io.to(to).emit('voice:signal', {
-      from: socket.id,
-      data,
-      username: socket.data.voiceUser?.username || socket.data.user?.username || 'Unknown'
-    });
-  });
-
-  socket.on('message:post', ({ content }) => {
-    const text = String(content || '').trim();
-    if (!text) return;
-    const freshUser = getSocketUser(socket);
-    if (!freshUser) return;
-
-    const message = {
-      id: createId('msg_'),
-      userId: freshUser.id,
-      content: text,
-      createdAt: new Date().toISOString()
-    };
-    db.messages.push(message);
-    if (db.messages.length > 500) db.messages = db.messages.slice(-500);
-    saveDB();
-
-    const payload = { ...message, author: publicUser(freshUser) };
-    io.emit('message:new', payload);
-    io.emit('state:changed');
-  });
-
-  socket.on('disconnect', () => {
-    if (socket.rooms.has(VOICE_ROOM)) {
-      socket.to(VOICE_ROOM).emit('voice:peer-left', { socketId: socket.id });
-      syncVoiceState();
-    }
-  });
+  socket.on('ping:library', () => socket.emit('library:update'));
+  if (userId) socket.emit('library:update');
 });
 
 server.listen(PORT, () => {
-  console.log(`PulseCord running at http://localhost:${PORT}`);
+  console.log(`RetroTube running on http://localhost:${PORT}`);
 });

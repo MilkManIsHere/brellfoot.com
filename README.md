@@ -1,17 +1,6 @@
-# PulseCord
+# RetroTube 2006
 
-A Discord-style Node.js app with:
-
-- account creation and login
-- case-insensitive unique usernames
-- username rules: 1–20 characters, letters/numbers/`_`/`-`
-- password rules: 6–20 characters, letters/numbers/`_`/`-`
-- confirm password on sign up and login
-- password visibility toggle on both forms
-- a single global voice room
-- mute and deafen controls
-- live messages for all signed-in accounts
-- searchable and sortable account list with created date
+A Node.js video sharing app with a retro 2006-style layout, user accounts, uploads, comments, and live updates.
 
 ## Run
 
@@ -20,4 +9,11 @@ npm install
 npm start
 ```
 
-Then open `http://localhost:3000`.
+Open the app at `http://localhost:3000`.
+
+## Notes
+
+- Upload limit: 1 GB per video.
+- Username rules: 1–20 characters, letters/numbers/_/-
+- Password rules: 6–20 characters, letters/numbers/_/-
+- Uploads are stored in the `uploads/` folder.

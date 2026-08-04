@@ -1,7 +1,7 @@
 {
-  "name": "pulsecord",
-  "version": "2.0.0",
-  "description": "Discord-style Node.js voice chat app with accounts and live updates.",
+  "name": "retrotube-2006",
+  "version": "1.0.0",
+  "description": "Retro 2006-style video sharing site with accounts, uploads, comments, and live updates.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -11,6 +11,7 @@
     "bcryptjs": "^2.4.3",
     "express": "^4.21.2",
     "express-session": "^1.18.1",
+    "multer": "^1.4.5-lts.1",
     "socket.io": "^4.8.1"
   }
 }

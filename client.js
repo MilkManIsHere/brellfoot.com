@@ -1,55 +1,49 @@
 const socket = io();
+const MAX_BYTES = 1024 * 1024 * 1024;
 
 const state = {
   me: null,
+  videos: [],
   users: [],
-  messages: [],
-  filteredUsers: [],
+  currentVideoId: null,
   search: '',
-  sort: 'created-asc',
-  connectedToVoice: false,
-  muted: false,
-  deafened: false,
-  voice: {
-    localStream: null,
-    participants: [],
-    peers: new Map(),
-    remoteAudios: new Map(),
-    joined: false
-  }
+  accountSearch: '',
+  accountSort: 'created-desc'
 };
 
 const el = {
-  app: document.getElementById('app'),
   authOverlay: document.getElementById('authOverlay'),
   authError: document.getElementById('authError'),
   tabLogin: document.getElementById('tabLogin'),
   tabSignup: document.getElementById('tabSignup'),
   loginForm: document.getElementById('loginForm'),
   signupForm: document.getElementById('signupForm'),
-  logoutBtn: document.getElementById('logoutBtn'),
+  app: document.getElementById('app'),
   meLabel: document.getElementById('meLabel'),
-  accountSearch: document.getElementById('accountSearch'),
-  sortSelect: document.getElementById('sortSelect'),
-  accountList: document.getElementById('accountList'),
-  chatTitle: document.getElementById('chatTitle'),
-  chatSubtitle: document.getElementById('chatSubtitle'),
-  joinVoiceBtn: document.getElementById('joinVoiceBtn'),
-  leaveVoiceBtn: document.getElementById('leaveVoiceBtn'),
-  muteBtn: document.getElementById('muteBtn'),
-  deafenBtn: document.getElementById('deafenBtn'),
+  logoutBtn: document.getElementById('logoutBtn'),
+  searchForm: document.getElementById('searchForm'),
+  searchInput: document.getElementById('searchInput'),
   refreshBtn: document.getElementById('refreshBtn'),
-  voiceInfo: document.getElementById('voiceInfo'),
-  voicePeers: document.getElementById('voicePeers'),
-  messageList: document.getElementById('messageList'),
-  messageForm: document.getElementById('messageForm'),
-  messageInput: document.getElementById('messageInput')
+  uploadForm: document.getElementById('uploadForm'),
+  videoFile: document.getElementById('videoFile'),
+  accountSearch: document.getElementById('accountSearch'),
+  accountSort: document.getElementById('accountSort'),
+  accountList: document.getElementById('accountList'),
+  feedMeta: document.getElementById('feedMeta'),
+  videoFeed: document.getElementById('videoFeed'),
+  watchTitle: document.getElementById('watchTitle'),
+  watchMeta: document.getElementById('watchMeta'),
+  watchDesc: document.getElementById('watchDesc'),
+  player: document.getElementById('player'),
+  loadLatestBtn: document.getElementById('loadLatestBtn'),
+  commentForm: document.getElementById('commentForm'),
+  commentList: document.getElementById('commentList')
 };
 
 function api(url, options = {}) {
   return fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     credentials: 'same-origin',
+    headers: { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) },
     ...options
   }).then(async res => {
     const data = await res.json().catch(() => ({}));
@@ -58,16 +52,11 @@ function api(url, options = {}) {
   });
 }
 
-function initials(name = '') {
-  return (name || '?').trim().slice(0, 1).toUpperCase();
+function fmtDate(iso) {
+  return iso ? new Date(iso).toLocaleString() : 'Unknown';
 }
 
-function formatDate(iso) {
-  if (!iso) return 'Unknown';
-  return new Date(iso).toLocaleString();
-}
-
-function setAuthError(message = '') {
+function showError(message = '') {
   el.authError.textContent = message;
 }
 
@@ -85,417 +74,313 @@ function showApp() {
   el.app.classList.remove('hidden');
 }
 
-function togglePasswordVisibility(form, visible) {
-  const fields = form.querySelectorAll('input[type="password"], input[data-password-field]');
-  fields.forEach(field => {
-    if (field.dataset.passwordField !== 'true') return;
-    field.type = visible ? 'text' : 'password';
+function setPasswordVisibility(form, visible) {
+  form.querySelectorAll('input[type="password"], input[data-kind="password"]').forEach(input => {
+    input.type = visible ? 'text' : 'password';
+    input.dataset.kind = 'password';
   });
 }
 
 function wirePasswordToggle(form) {
-  const passwordInputs = form.querySelectorAll('input[name="password"], input[name="confirmPassword"]');
-  passwordInputs.forEach(input => input.dataset.passwordField = 'true');
-  const toggle = form.querySelector('.reveal-toggle');
-  toggle.addEventListener('change', () => {
-    passwordInputs.forEach(field => field.type = toggle.checked ? 'text' : 'password');
+  form.querySelectorAll('input[name="password"], input[name="confirmPassword"]').forEach(input => {
+    input.dataset.kind = 'password';
   });
+  const checkbox = form.querySelector('.password-visibility');
+  checkbox.addEventListener('change', () => setPasswordVisibility(form, checkbox.checked));
 }
 
-function sortUsers(users) {
-  const arr = [...users];
-  switch (state.sort) {
-    case 'created-desc':
-      return arr.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    case 'name-asc':
-      return arr.sort((a, b) => a.username.localeCompare(b.username, undefined, { sensitivity: 'base' }));
-    case 'name-desc':
-      return arr.sort((a, b) => b.username.localeCompare(a.username, undefined, { sensitivity: 'base' }));
-    case 'created-asc':
-    default:
-      return arr.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-  }
+function usernameBadge(name) {
+  return (name || '?').trim().slice(0, 1).toUpperCase();
 }
 
-function renderAccounts() {
-  const search = state.search.trim().toLowerCase();
-  const filtered = state.users.filter(user => !search || user.username.toLowerCase().includes(search));
-  const sorted = sortUsers(filtered);
-  state.filteredUsers = sorted;
+function renderUsers() {
+  const search = state.accountSearch.trim().toLowerCase();
+  let users = state.users.filter(u => !search || u.username.toLowerCase().includes(search));
+  users = [...users].sort((a, b) => {
+    switch (state.accountSort) {
+      case 'created-asc': return new Date(a.createdAt) - new Date(b.createdAt);
+      case 'created-desc': return new Date(b.createdAt) - new Date(a.createdAt);
+      case 'name-desc': return b.username.localeCompare(a.username, undefined, { sensitivity: 'base' });
+      case 'name-asc':
+      default: return a.username.localeCompare(b.username, undefined, { sensitivity: 'base' });
+    }
+  });
 
   el.accountList.innerHTML = '';
-  if (!sorted.length) {
-    const empty = document.createElement('div');
-    empty.className = 'empty-state';
-    empty.textContent = 'No accounts match that search.';
-    el.accountList.appendChild(empty);
+  if (!users.length) {
+    el.accountList.innerHTML = '<div class="empty">No accounts found.</div>';
     return;
   }
 
-  sorted.forEach(user => {
+  for (const user of users) {
     const card = document.createElement('div');
     card.className = 'account-card';
-
-    const top = document.createElement('div');
-    top.className = 'account-top';
-
-    const left = document.createElement('div');
-    left.innerHTML = `<div class="account-name">@${user.username}</div><div class="account-meta">Created ${formatDate(user.createdAt)}</div>`;
-
-    const right = document.createElement('div');
-    const badges = [];
-    if (state.me && user.id === state.me.id) badges.push('<span class="badge me">You</span>');
-    if (user.online) badges.push('<span class="badge online">Online</span>');
-    if (user.inVoice) badges.push('<span class="badge voice">Voice</span>');
-    if (user.muted) badges.push('<span class="badge muted">Muted</span>');
-    if (user.deafened) badges.push('<span class="badge deafened">Deafened</span>');
-    right.innerHTML = badges.join(' ');
-
-    top.appendChild(left);
-    top.appendChild(right);
-    card.appendChild(top);
+    card.innerHTML = `
+      <div class="account-name">@${user.username} ${user.id === state.me?.id ? '(you)' : ''}</div>
+      <div class="account-meta">Created ${fmtDate(user.createdAt)}</div>
+    `;
     el.accountList.appendChild(card);
-  });
+  }
 }
 
-function renderMessages() {
-  el.messageList.innerHTML = '';
-  if (!state.messages.length) {
-    const empty = document.createElement('div');
-    empty.className = 'empty-state';
-    empty.innerHTML = '<div><strong>No messages yet.</strong><div class="help-text">Say something to start the room.</div></div>';
-    el.messageList.appendChild(empty);
+function renderVideos() {
+  const search = state.search.trim().toLowerCase();
+  const videos = state.videos.filter(v => {
+    if (!search) return true;
+    return [v.title, v.description, v.author?.username || ''].join(' ').toLowerCase().includes(search);
+  });
+
+  el.feedMeta.textContent = `${videos.length} upload${videos.length === 1 ? '' : 's'} available`;
+  el.videoFeed.innerHTML = '';
+
+  if (!videos.length) {
+    el.videoFeed.innerHTML = '<div class="empty">No videos match that search.</div>';
     return;
   }
 
-  state.messages.forEach(message => {
-    const row = document.createElement('div');
-    row.className = 'message';
-    const author = message.author?.username || 'Unknown';
-    const avatar = initials(author);
-    row.innerHTML = `
-      <div class="avatar">${avatar}</div>
-      <div class="msg-bubble">
-        <div class="msg-head">
-          <div class="msg-user">@${author}</div>
-          <div class="message-meta">${formatDate(message.createdAt)}</div>
+  for (const video of videos) {
+    const card = document.createElement('div');
+    card.className = 'video-card';
+    card.innerHTML = `
+      <div class="thumb" data-letter="${usernameBadge(video.title)}"></div>
+      <div>
+        <div class="video-title">${escapeHtml(video.title)}</div>
+        <div class="video-meta">by @${escapeHtml(video.author?.username || 'unknown')} • ${fmtDate(video.createdAt)} • ${(video.size / (1024 * 1024)).toFixed(1)} MB</div>
+        <div class="video-desc">${escapeHtml(video.description || 'No description.')}</div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="small-btn" data-open-video="${video.id}">Watch</button>
         </div>
-        <div class="msg-text"></div>
       </div>
     `;
-    row.querySelector('.msg-text').textContent = message.content;
-    el.messageList.appendChild(row);
+    el.videoFeed.appendChild(card);
+  }
+
+  el.videoFeed.querySelectorAll('[data-open-video]').forEach(btn => {
+    btn.addEventListener('click', () => loadVideo(btn.dataset.openVideo));
   });
-  el.messageList.scrollTop = el.messageList.scrollHeight;
 }
 
-function renderVoice() {
-  const participants = state.voice.participants || [];
-  el.voicePeers.innerHTML = '';
-  if (!state.voice.joined) {
-    el.voiceInfo.textContent = 'Not connected';
-    const empty = document.createElement('div');
-    empty.className = 'help-text';
-    empty.textContent = 'Join voice to see people here and connect audio.';
-    el.voicePeers.appendChild(empty);
+function renderCurrent(video) {
+  if (!video) {
+    el.watchTitle.textContent = 'Select a video';
+    el.watchMeta.textContent = 'Pick a video from the feed.';
+    el.watchDesc.textContent = '';
+    el.player.removeAttribute('src');
+    el.player.load();
+    el.commentList.innerHTML = '';
     return;
   }
 
-  el.voiceInfo.textContent = `${participants.length} connected`;
-  participants.forEach(p => {
-    const pill = document.createElement('div');
-    pill.className = 'voice-peer';
-    const flags = [];
-    if (state.me && p.userId === state.me.id) flags.push('You');
-    if (p.muted) flags.push('Muted');
-    if (p.deafened) flags.push('Deafened');
-    pill.textContent = flags.length ? `${p.username} • ${flags.join(' • ')}` : p.username;
-    el.voicePeers.appendChild(pill);
-  });
-}
-
-function updateControls() {
-  el.muteBtn.textContent = state.muted ? 'Unmute' : 'Mute';
-  el.deafenBtn.textContent = state.deafened ? 'Undeafen' : 'Deafen';
-  el.joinVoiceBtn.disabled = state.voice.joined;
-  el.leaveVoiceBtn.disabled = !state.voice.joined;
-}
-
-async function refreshState() {
-  const data = await api('/api/state');
-  state.me = data.me;
-  state.users = data.users || [];
-  state.messages = data.messages || [];
-  state.voice.participants = data.voiceParticipants || [];
-  renderAccounts();
-  renderMessages();
-  renderVoice();
-  updateControls();
-  el.meLabel.textContent = state.me ? `Signed in as @${state.me.username}` : '';
-  showApp();
-}
-
-function clearPeer(peerId) {
-  const peer = state.voice.peers.get(peerId);
-  if (peer?.pc) {
-    try { peer.pc.close(); } catch (_) {}
-  }
-  const audio = state.voice.remoteAudios.get(peerId);
-  if (audio) {
-    audio.srcObject = null;
-    audio.remove();
-    state.voice.remoteAudios.delete(peerId);
-  }
-  state.voice.peers.delete(peerId);
-}
-
-async function createPeerConnection(peerId, initiator) {
-  const existing = state.voice.peers.get(peerId);
-  if (existing?.pc) return existing.pc;
-
-  const pc = new RTCPeerConnection({
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-  });
-
-  if (state.voice.localStream) {
-    state.voice.localStream.getTracks().forEach(track => pc.addTrack(track, state.voice.localStream));
-  }
-
-  pc.onicecandidate = event => {
-    if (event.candidate) {
-      socket.emit('voice:signal', { to: peerId, data: { candidate: event.candidate } });
-    }
-  };
-
-  pc.ontrack = event => {
-    let audio = state.voice.remoteAudios.get(peerId);
-    if (!audio) {
-      audio = document.createElement('audio');
-      audio.autoplay = true;
-      audio.dataset.peerId = peerId;
-      document.body.appendChild(audio);
-      state.voice.remoteAudios.set(peerId, audio);
-    }
-    audio.srcObject = event.streams[0];
-    if (state.deafened) audio.volume = 0;
-  };
-
-  state.voice.peers.set(peerId, { ...(existing || {}), pc });
-
-  if (initiator) {
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    socket.emit('voice:signal', { to: peerId, data: { description: pc.localDescription } });
-  }
-
-  return pc;
-}
-
-async function joinVoice() {
-  if (state.voice.joined) return;
-  try {
-    state.voice.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-  } catch (err) {
-    alert('Microphone permission is required for voice chat.');
+  el.watchTitle.textContent = video.title;
+  el.watchMeta.textContent = `by @${video.author?.username || 'unknown'} • ${fmtDate(video.createdAt)} • ${(video.size / (1024 * 1024)).toFixed(1)} MB`;
+  el.watchDesc.textContent = video.description || 'No description.';
+  el.player.src = `/uploads/${encodeURIComponent(video.filename)}`;
+  el.commentList.innerHTML = '';
+  if (!video.comments?.length) {
+    el.commentList.innerHTML = '<div class="empty">No comments yet.</div>';
     return;
   }
-
-  state.voice.joined = true;
-  socket.emit('voice:join');
-  updateControls();
+  for (const comment of video.comments) {
+    const item = document.createElement('div');
+    item.className = 'comment';
+    item.innerHTML = `
+      <div class="comment-head">
+        <div class="comment-user">@${escapeHtml(comment.author?.username || 'unknown')}</div>
+        <div class="comment-meta">${fmtDate(comment.createdAt)}</div>
+      </div>
+      <div class="comment-body">${escapeHtml(comment.text)}</div>
+    `;
+    el.commentList.appendChild(item);
+  }
 }
 
-function leaveVoice() {
-  if (!state.voice.joined) return;
-  socket.emit('voice:leave');
-  state.voice.participants = [];
-  [...state.voice.peers.keys()].forEach(clearPeer);
-  if (state.voice.localStream) {
-    state.voice.localStream.getTracks().forEach(track => track.stop());
-  }
-  state.voice.localStream = null;
-  state.voice.joined = false;
-  state.muted = false;
-  state.deafened = false;
-  renderVoice();
-  updateControls();
+function escapeHtml(text = '') {
+  return String(text)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
-function setAudioState() {
-  if (state.deafened) {
-    state.muted = true;
-  }
-  if (state.voice.localStream) {
-    state.voice.localStream.getAudioTracks().forEach(track => {
-      track.enabled = !state.muted;
-    });
-  }
-  state.voice.remoteAudios.forEach(audio => {
-    audio.muted = state.deafened;
-    audio.volume = state.deafened ? 0 : 1;
-  });
-  socket.emit('voice:status', { muted: state.muted, deafened: state.deafened });
-  updateControls();
+async function refreshMe() {
+  const data = await api('/api/me');
+  state.me = data.user;
+  el.meLabel.textContent = `Signed in as @${state.me.username}`;
 }
 
-async function sendMessage() {
-  const content = el.messageInput.value.trim();
-  if (!content) return;
-  await api('/api/messages', {
-    method: 'POST',
-    body: JSON.stringify({ content })
-  });
-  el.messageInput.value = '';
+async function refreshUsers() {
+  const data = await api('/api/users');
+  state.users = data.users;
+  renderUsers();
 }
 
-socket.on('message:new', payload => {
-  state.messages.push(payload);
-  state.messages = state.messages.slice(-200);
-  renderMessages();
-});
-
-socket.on('voice:participants', ({ participants }) => {
-  state.voice.participants = participants || [];
-  renderVoice();
-  updateControls();
-});
-
-socket.on('voice:peers', async ({ peers }) => {
-  for (const peer of peers || []) {
-    if (!state.voice.peers.has(peer.socketId)) {
-      await createPeerConnection(peer.socketId, true);
-    }
+async function refreshVideos() {
+  const data = await api('/api/videos');
+  state.videos = data.videos;
+  renderVideos();
+  if (state.currentVideoId) {
+    const current = state.videos.find(v => v.id === state.currentVideoId);
+    renderCurrent(current || null);
   }
-});
+}
 
-socket.on('voice:peer-joined', async ({ socketId }) => {
-  if (socketId && !state.voice.peers.has(socketId)) {
-    await createPeerConnection(socketId, false);
-  }
-  renderVoice();
-});
+async function loadVideo(id) {
+  const data = await api(`/api/videos/${encodeURIComponent(id)}`);
+  state.currentVideoId = id;
+  renderCurrent(data.video);
+}
 
-socket.on('voice:peer-left', ({ socketId }) => {
-  if (socketId) clearPeer(socketId);
-  renderVoice();
-});
+async function loadLatest() {
+  if (!state.videos.length) return;
+  await loadVideo(state.videos[0].id);
+}
 
-socket.on('voice:signal', async ({ from, data, username }) => {
-  if (!state.voice.peers.has(from)) {
-    state.voice.peers.set(from, { username });
-    await createPeerConnection(from, false);
-  }
-  const peer = state.voice.peers.get(from);
-  const pc = peer?.pc;
-  if (!pc) return;
-
-  if (data.description) {
-    await pc.setRemoteDescription(data.description);
-    if (data.description.type === 'offer') {
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      socket.emit('voice:signal', { to: from, data: { description: pc.localDescription } });
-    }
-  } else if (data.candidate) {
-    try { await pc.addIceCandidate(data.candidate); } catch (_) {}
-  }
-});
-
-socket.on('state:changed', () => {
-  refreshState().catch(() => {});
-});
-
-wirePasswordToggle(el.loginForm);
-wirePasswordToggle(el.signupForm);
-
-el.tabLogin.onclick = () => showAuth(true);
-el.tabSignup.onclick = () => showAuth(false);
-
-el.loginForm.onsubmit = async e => {
-  e.preventDefault();
-  setAuthError('');
-  const form = new FormData(el.loginForm);
+async function bootstrap() {
   try {
-    await api('/api/login', {
-      method: 'POST',
-      body: JSON.stringify(Object.fromEntries(form))
-    });
-    await refreshState();
-    await joinVoice().catch(() => {});
-  } catch (err) {
-    setAuthError(err.message);
-  }
-};
-
-el.signupForm.onsubmit = async e => {
-  e.preventDefault();
-  setAuthError('');
-  const form = new FormData(el.signupForm);
-  try {
-    await api('/api/signup', {
-      method: 'POST',
-      body: JSON.stringify(Object.fromEntries(form))
-    });
-    await refreshState();
-    await joinVoice().catch(() => {});
-  } catch (err) {
-    setAuthError(err.message);
-  }
-};
-
-el.logoutBtn.onclick = async () => {
-  try {
-    await api('/api/logout', { method: 'POST', body: '{}' });
-  } catch (_) {}
-  leaveVoice();
-  location.reload();
-};
-
-el.accountSearch.addEventListener('input', () => {
-  state.search = el.accountSearch.value;
-  renderAccounts();
-});
-
-el.sortSelect.addEventListener('change', () => {
-  state.sort = el.sortSelect.value;
-  renderAccounts();
-});
-
-el.joinVoiceBtn.onclick = () => joinVoice();
-el.leaveVoiceBtn.onclick = () => leaveVoice();
-el.muteBtn.onclick = () => {
-  state.muted = !state.muted;
-  setAudioState();
-};
-el.deafenBtn.onclick = () => {
-  state.deafened = !state.deafened;
-  if (state.deafened) state.muted = true;
-  setAudioState();
-};
-el.refreshBtn.onclick = () => refreshState().catch(() => {});
-
-el.messageForm.onsubmit = async e => {
-  e.preventDefault();
-  try {
-    await sendMessage();
-  } catch (err) {
-    alert(err.message);
-  }
-};
-
-(async () => {
-  try {
-    const me = await api('/api/me');
-    if (me?.user) {
-      await refreshState();
-    } else {
-      showAuth(true);
-    }
+    await refreshMe();
+    showApp();
+    await Promise.all([refreshUsers(), refreshVideos()]);
+    if (state.videos.length) await loadVideo(state.videos[0].id);
   } catch {
     showAuth(true);
   }
+}
 
-  setInterval(() => {
-    if (!document.hidden) refreshState().catch(() => {});
-  }, 15000);
-})();
+el.tabLogin.addEventListener('click', () => { showError(''); showAuth(true); });
+el.tabSignup.addEventListener('click', () => { showError(''); showAuth(false); });
+
+[el.loginForm, el.signupForm].forEach(form => {
+  wirePasswordToggle(form);
+});
+
+el.loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  showError('');
+  const fd = new FormData(el.loginForm);
+  try {
+    await api('/api/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: fd.get('username'),
+        password: fd.get('password'),
+        confirmPassword: fd.get('confirmPassword')
+      })
+    });
+    await bootstrap();
+  } catch (err) {
+    showError(err.message);
+  }
+});
+
+el.signupForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  showError('');
+  const fd = new FormData(el.signupForm);
+  try {
+    await api('/api/signup', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: fd.get('username'),
+        password: fd.get('password'),
+        confirmPassword: fd.get('confirmPassword')
+      })
+    });
+    await bootstrap();
+  } catch (err) {
+    showError(err.message);
+  }
+});
+
+el.logoutBtn.addEventListener('click', async () => {
+  await api('/api/logout', { method: 'POST', body: '{}' });
+  location.reload();
+});
+
+el.searchForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  state.search = el.searchInput.value;
+  renderVideos();
+});
+
+el.searchInput.addEventListener('input', () => {
+  state.search = el.searchInput.value;
+  renderVideos();
+});
+
+el.accountSearch.addEventListener('input', () => {
+  state.accountSearch = el.accountSearch.value;
+  renderUsers();
+});
+
+el.accountSort.addEventListener('change', () => {
+  state.accountSort = el.accountSort.value;
+  renderUsers();
+});
+
+el.refreshBtn.addEventListener('click', async () => {
+  await Promise.all([refreshUsers(), refreshVideos()]);
+});
+
+el.loadLatestBtn.addEventListener('click', async () => {
+  await loadLatest();
+});
+
+el.uploadForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(el.uploadForm);
+  const file = el.videoFile.files[0];
+  if (!file) return alert('Choose a video file first.');
+  if (file.size > MAX_BYTES) return alert('That file is larger than 1 GB.');
+  try {
+    const upload = new FormData();
+    upload.append('title', fd.get('title'));
+    upload.append('description', fd.get('description'));
+    upload.append('video', file);
+    const res = await fetch('/api/upload', { method: 'POST', body: upload, credentials: 'same-origin' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    el.uploadForm.reset();
+    await refreshVideos();
+    await refreshUsers();
+    await loadVideo(data.video.id);
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+el.commentForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!state.currentVideoId) return alert('Pick a video first.');
+  const fd = new FormData(el.commentForm);
+  const comment = String(fd.get('comment') || '').trim();
+  if (!comment) return;
+  try {
+    await api(`/api/videos/${encodeURIComponent(state.currentVideoId)}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ text: comment })
+    });
+    el.commentForm.reset();
+    await refreshVideos();
+    await loadVideo(state.currentVideoId);
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+socket.on('library:update', async () => {
+  await Promise.all([refreshUsers(), refreshVideos()]);
+});
+
+socket.on('video:changed', async (videoId) => {
+  await refreshVideos();
+  if (state.currentVideoId === videoId) await loadVideo(videoId);
+});
+
+setInterval(() => {
+  if (!el.app.classList.contains('hidden')) {
+    Promise.all([refreshUsers(), refreshVideos()]).catch(() => {});
+  }
+}, 15000);
+
+bootstrap();

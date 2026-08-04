@@ -3,101 +3,162 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PulseCord</title>
+  <title>RetroTube 2006</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div id="authOverlay" class="auth-overlay hidden">
-    <div class="auth-card">
-      <h1>PulseCord</h1>
-      <p>Voice chat with live messages and account tracking.</p>
+    <div class="auth-shell">
+      <div class="auth-brand">
+        <div class="logo-mark">▶</div>
+        <div>
+          <div class="brand-title">RetroTube</div>
+          <div class="brand-subtitle">Old-school video sharing</div>
+        </div>
+      </div>
 
       <div class="auth-tabs">
-        <button id="tabLogin" class="active" type="button">Login</button>
-        <button id="tabSignup" type="button">Sign up</button>
+        <button id="tabLogin" class="active">Login</button>
+        <button id="tabSignup">Sign up</button>
       </div>
 
       <form id="loginForm" class="auth-form">
-        <input name="username" placeholder="Username" autocomplete="username" required />
-        <input name="password" type="password" placeholder="Password" autocomplete="current-password" required />
-        <input name="confirmPassword" type="password" placeholder="Confirm password" autocomplete="current-password" required />
-        <label class="toggle-row"><input type="checkbox" class="reveal-toggle"> Show passwords</label>
+        <label>Username</label>
+        <input name="username" autocomplete="username" maxlength="20" />
+        <label>Password</label>
+        <input name="password" type="password" autocomplete="current-password" maxlength="20" />
+        <label>Confirm password</label>
+        <input name="confirmPassword" type="password" autocomplete="current-password" maxlength="20" />
+        <div class="field-row">
+          <label class="check"><input type="checkbox" class="password-visibility" /> Show passwords</label>
+        </div>
         <button type="submit">Login</button>
       </form>
 
       <form id="signupForm" class="auth-form hidden">
-        <input name="username" placeholder="Choose a username" autocomplete="username" required />
-        <input name="password" type="password" placeholder="Create a password" autocomplete="new-password" required />
-        <input name="confirmPassword" type="password" placeholder="Confirm password" autocomplete="new-password" required />
-        <label class="toggle-row"><input type="checkbox" class="reveal-toggle"> Show passwords</label>
+        <label>Username</label>
+        <input name="username" autocomplete="username" maxlength="20" />
+        <label>Password</label>
+        <input name="password" type="password" autocomplete="new-password" maxlength="20" />
+        <label>Confirm password</label>
+        <input name="confirmPassword" type="password" autocomplete="new-password" maxlength="20" />
+        <div class="field-row">
+          <label class="check"><input type="checkbox" class="password-visibility" /> Show passwords</label>
+        </div>
         <button type="submit">Create account</button>
       </form>
 
-      <div id="authError" class="error"></div>
+      <div id="authError" class="auth-error"></div>
+      <div class="auth-note">Usernames: 1–20 chars, letters/numbers/_/-. Passwords: 6–20 chars, same character set.</div>
     </div>
   </div>
 
-  <div id="app" class="app hidden">
-    <aside class="sidebar">
-      <div class="sidebar-head">
-        <div>
-          <div class="eyebrow">Accounts</div>
-          <div id="meLabel" class="server-name">Loading...</div>
+  <div id="app" class="page hidden">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="logo-wrap">
+          <div class="yt-logo">RetroTube</div>
+          <div class="date-pill">2006 style</div>
         </div>
-        <button id="logoutBtn" class="ghost-btn" type="button">Logout</button>
+        <form id="searchForm" class="searchbar">
+          <input id="searchInput" type="text" placeholder="Search videos" autocomplete="off" />
+          <button type="submit">Search</button>
+        </form>
+        <div class="user-chip">
+          <span id="meLabel"></span>
+          <button id="logoutBtn" class="small-btn">Logout</button>
+        </div>
       </div>
+      <nav class="navrow">
+        <a href="#" class="navlink active">Home</a>
+        <a href="#" class="navlink">Videos</a>
+        <a href="#" class="navlink">Channels</a>
+        <a href="#" class="navlink">Upload</a>
+      </nav>
+    </header>
 
-      <div class="section">
-        <div class="section-head">
-          <span class="section-title">Search</span>
-          <select id="sortSelect" class="select-small">
-            <option value="created-asc">Date created: first</option>
-            <option value="created-desc">Date created: last</option>
-            <option value="name-asc">A to Z</option>
-            <option value="name-desc">Z to A</option>
-          </select>
+    <div class="layout">
+      <aside class="sidebar left">
+        <div class="box">
+          <div class="box-title">Browse</div>
+          <button id="refreshBtn" class="wide-btn">Refresh feed</button>
         </div>
-        <input id="accountSearch" class="search-input" placeholder="Search account names" />
-      </div>
 
-      <div class="section grow">
-        <div class="section-title">All accounts</div>
-        <div id="accountList" class="account-list"></div>
-      </div>
-    </aside>
-
-    <main class="chat-panel">
-      <header class="chat-head">
-        <div>
-          <div id="chatTitle" class="chat-title">Voice room</div>
-          <div id="chatSubtitle" class="chat-subtitle">Messages update for every signed-in account.</div>
-        </div>
-        <div class="head-actions">
-          <button id="joinVoiceBtn" class="ghost-btn" type="button">Join voice</button>
-          <button id="muteBtn" class="ghost-btn" type="button">Mute</button>
-          <button id="deafenBtn" class="ghost-btn" type="button">Deafen</button>
-          <button id="refreshBtn" class="ghost-btn" type="button">Refresh</button>
-        </div>
-      </header>
-
-      <section class="voice-panel">
-        <div class="voice-status">
-          <div>
-            <strong>Voice participants</strong>
-            <div id="voiceInfo">Not connected</div>
+        <div class="box">
+          <div class="box-title">Members</div>
+          <div class="filter-row">
+            <input id="accountSearch" class="mini-input" type="text" placeholder="Search accounts" />
+            <select id="accountSort" class="mini-input">
+              <option value="created-desc">Newest first</option>
+              <option value="created-asc">Oldest first</option>
+              <option value="name-asc">A to Z</option>
+              <option value="name-desc">Z to A</option>
+            </select>
           </div>
-          <button id="leaveVoiceBtn" class="ghost-btn" type="button">Leave voice</button>
+          <div id="accountList" class="account-list"></div>
         </div>
-        <div id="voicePeers" class="voice-peers"></div>
-      </section>
+      </aside>
 
-      <section id="messageList" class="message-list"></section>
+      <main class="main">
+        <section class="hero box">
+          <div class="hero-copy">
+            <div class="hero-kicker">Upload videos up to 1 GB</div>
+            <h1>Share clips in a 2006-style layout.</h1>
+            <p>Browse uploads, watch videos, leave comments, and see updates live across every signed-in account.</p>
+          </div>
+          <div class="hero-panel">
+            <form id="uploadForm" class="upload-form">
+              <div class="form-grid">
+                <div>
+                  <label>Title</label>
+                  <input name="title" maxlength="120" required />
+                </div>
+                <div>
+                  <label>Video file</label>
+                  <input id="videoFile" name="video" type="file" accept="video/*" required />
+                </div>
+              </div>
+              <div>
+                <label>Description</label>
+                <textarea name="description" rows="4" maxlength="1000"></textarea>
+              </div>
+              <div class="upload-meta">Maximum upload size: 1 GB</div>
+              <button type="submit">Upload video</button>
+            </form>
+          </div>
+        </section>
 
-      <form id="messageForm" class="message-form">
-        <input id="messageInput" name="content" placeholder="Message the room..." autocomplete="off" />
-        <button type="submit">Send</button>
-      </form>
-    </main>
+        <section class="content-grid">
+          <div class="box feed-box">
+            <div class="section-head">
+              <div>
+                <div class="box-title">Featured uploads</div>
+                <div id="feedMeta" class="muted small"></div>
+              </div>
+            </div>
+            <div id="videoFeed" class="video-feed"></div>
+          </div>
+
+          <div class="box watch-box">
+            <div class="section-head">
+              <div>
+                <div class="box-title" id="watchTitle">Select a video</div>
+                <div id="watchMeta" class="muted small">Pick a video from the feed.</div>
+              </div>
+              <button id="loadLatestBtn" class="small-btn">Latest</button>
+            </div>
+            <video id="player" class="player" controls playsinline></video>
+            <div id="watchDesc" class="watch-desc muted"></div>
+            <div class="divider"></div>
+            <form id="commentForm" class="comment-form">
+              <textarea name="comment" rows="3" maxlength="500" placeholder="Add a comment"></textarea>
+              <button type="submit">Post comment</button>
+            </form>
+            <div id="commentList" class="comment-list"></div>
+          </div>
+        </section>
+      </main>
+    </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
