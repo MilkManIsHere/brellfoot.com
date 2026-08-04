@@ -1,11 +1,16 @@
 {
-  "name": "anon-board",
+  "name": "pulsecord",
   "version": "1.0.0",
+  "description": "Discord-style Node.js chat app with accounts, servers, DMs, and voice chat signaling.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
+  "license": "MIT",
   "dependencies": {
-    "express": "^4.21.0"
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "socket.io": "^4.8.1"
   }
 }

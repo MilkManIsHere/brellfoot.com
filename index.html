@@ -1,56 +1,107 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Anon Board</title>
-  <style>
-    body{
-      font-family:Arial,sans-serif;
-      background:#222;
-      color:white;
-      max-width:700px;
-      margin:auto;
-      padding:20px;
-    }
-
-    textarea{
-      width:100%;
-      height:100px;
-      margin-bottom:10px;
-    }
-
-    button{
-      padding:10px 20px;
-      cursor:pointer;
-      margin-right:6px;
-    }
-
-    .post{
-      background:#333;
-      padding:10px;
-      margin-top:10px;
-      border-radius:5px;
-      white-space:pre-wrap;
-    }
-
-    small{
-      color:#aaa;
-    }
-  </style>
+  <title>PulseCord</title>
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <h1>Anon Board</h1>
+  <div id="authOverlay" class="auth-overlay hidden">
+    <div class="auth-card">
+      <h1>PulseCord</h1>
+      <p>Discord-style chat with accounts, servers, DMs, and live updates.</p>
+      <div class="auth-tabs">
+        <button id="tabLogin" class="active">Login</button>
+        <button id="tabSignup">Sign up</button>
+      </div>
+      <form id="loginForm" class="auth-form">
+        <input name="username" placeholder="Username" autocomplete="username" required />
+        <input name="password" type="password" placeholder="Password" autocomplete="current-password" required />
+        <button type="submit">Login</button>
+      </form>
+      <form id="signupForm" class="auth-form hidden">
+        <input name="username" placeholder="Choose a username" autocomplete="username" required />
+        <input name="password" type="password" placeholder="Create a password" autocomplete="new-password" required />
+        <button type="submit">Create account</button>
+      </form>
+      <div id="authError" class="error"></div>
+    </div>
+  </div>
 
-  <textarea id="message" placeholder="Write something..."></textarea>
-  <br>
-  <button onclick="postMessage()">Post</button>
-  <button onclick="clearPosts()">Clear</button>
+  <div id="app" class="app hidden">
+    <aside class="left-rail">
+      <div class="brand-dot">P</div>
+      <div id="serverList" class="server-list"></div>
+      <button id="newServerBtn" class="fab">+</button>
+    </aside>
 
-  <hr>
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <div>
+          <div id="serverName" class="server-name">No server</div>
+          <div id="meLabel" class="me-label"></div>
+        </div>
+        <button id="logoutBtn" class="ghost-btn">Logout</button>
+      </div>
 
-  <div id="posts"></div>
+      <div class="section">
+        <div class="section-title">Text Channels</div>
+        <div id="textChannels" class="channel-list"></div>
+      </div>
 
-  <script src="script.js"></script>
+      <div class="section">
+        <div class="section-title">Voice Channels</div>
+        <div id="voiceChannels" class="channel-list"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Direct Messages</div>
+        <div id="dmList" class="dm-list"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Start a DM</div>
+        <form id="dmForm" class="mini-form">
+          <input name="username" placeholder="Username" />
+          <button type="submit">Open</button>
+        </form>
+      </div>
+    </aside>
+
+    <main class="chat-panel">
+      <header class="chat-head">
+        <div>
+          <div id="chatTitle" class="chat-title">Welcome</div>
+          <div id="chatSubtitle" class="chat-subtitle">Sign in to begin</div>
+        </div>
+        <div class="head-actions">
+          <button id="createChannelBtn" class="ghost-btn">New Channel</button>
+          <button id="refreshBtn" class="ghost-btn">Refresh</button>
+        </div>
+      </header>
+
+      <section id="voicePanel" class="voice-panel hidden">
+        <div class="voice-status">
+          <div>
+            <strong>Voice chat</strong>
+            <div id="voiceInfo">Not connected</div>
+          </div>
+          <button id="leaveVoiceBtn" class="ghost-btn">Leave voice</button>
+        </div>
+        <div id="voicePeers" class="voice-peers"></div>
+      </section>
+
+      <section id="messageList" class="message-list"></section>
+
+      <form id="messageForm" class="message-form">
+        <input id="messageInput" name="content" placeholder="Message..." autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+    </main>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/client.js"></script>
 </body>
 </html>
