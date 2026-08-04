@@ -10,84 +10,83 @@
   <div id="authOverlay" class="auth-overlay hidden">
     <div class="auth-card">
       <h1>PulseCord</h1>
-      <p>Discord-style chat with accounts, servers, DMs, and live updates.</p>
+      <p>Voice chat with live messages and account tracking.</p>
+
       <div class="auth-tabs">
-        <button id="tabLogin" class="active">Login</button>
-        <button id="tabSignup">Sign up</button>
+        <button id="tabLogin" class="active" type="button">Login</button>
+        <button id="tabSignup" type="button">Sign up</button>
       </div>
+
       <form id="loginForm" class="auth-form">
         <input name="username" placeholder="Username" autocomplete="username" required />
         <input name="password" type="password" placeholder="Password" autocomplete="current-password" required />
+        <input name="confirmPassword" type="password" placeholder="Confirm password" autocomplete="current-password" required />
+        <label class="toggle-row"><input type="checkbox" class="reveal-toggle"> Show passwords</label>
         <button type="submit">Login</button>
       </form>
+
       <form id="signupForm" class="auth-form hidden">
         <input name="username" placeholder="Choose a username" autocomplete="username" required />
         <input name="password" type="password" placeholder="Create a password" autocomplete="new-password" required />
+        <input name="confirmPassword" type="password" placeholder="Confirm password" autocomplete="new-password" required />
+        <label class="toggle-row"><input type="checkbox" class="reveal-toggle"> Show passwords</label>
         <button type="submit">Create account</button>
       </form>
+
       <div id="authError" class="error"></div>
     </div>
   </div>
 
   <div id="app" class="app hidden">
-    <aside class="left-rail">
-      <div class="brand-dot">P</div>
-      <div id="serverList" class="server-list"></div>
-      <button id="newServerBtn" class="fab">+</button>
-    </aside>
-
     <aside class="sidebar">
       <div class="sidebar-head">
         <div>
-          <div id="serverName" class="server-name">No server</div>
-          <div id="meLabel" class="me-label"></div>
+          <div class="eyebrow">Accounts</div>
+          <div id="meLabel" class="server-name">Loading...</div>
         </div>
-        <button id="logoutBtn" class="ghost-btn">Logout</button>
+        <button id="logoutBtn" class="ghost-btn" type="button">Logout</button>
       </div>
 
       <div class="section">
-        <div class="section-title">Text Channels</div>
-        <div id="textChannels" class="channel-list"></div>
+        <div class="section-head">
+          <span class="section-title">Search</span>
+          <select id="sortSelect" class="select-small">
+            <option value="created-asc">Date created: first</option>
+            <option value="created-desc">Date created: last</option>
+            <option value="name-asc">A to Z</option>
+            <option value="name-desc">Z to A</option>
+          </select>
+        </div>
+        <input id="accountSearch" class="search-input" placeholder="Search account names" />
       </div>
 
-      <div class="section">
-        <div class="section-title">Voice Channels</div>
-        <div id="voiceChannels" class="channel-list"></div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">Direct Messages</div>
-        <div id="dmList" class="dm-list"></div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">Start a DM</div>
-        <form id="dmForm" class="mini-form">
-          <input name="username" placeholder="Username" />
-          <button type="submit">Open</button>
-        </form>
+      <div class="section grow">
+        <div class="section-title">All accounts</div>
+        <div id="accountList" class="account-list"></div>
       </div>
     </aside>
 
     <main class="chat-panel">
       <header class="chat-head">
         <div>
-          <div id="chatTitle" class="chat-title">Welcome</div>
-          <div id="chatSubtitle" class="chat-subtitle">Sign in to begin</div>
+          <div id="chatTitle" class="chat-title">Voice room</div>
+          <div id="chatSubtitle" class="chat-subtitle">Messages update for every signed-in account.</div>
         </div>
         <div class="head-actions">
-          <button id="createChannelBtn" class="ghost-btn">New Channel</button>
-          <button id="refreshBtn" class="ghost-btn">Refresh</button>
+          <button id="joinVoiceBtn" class="ghost-btn" type="button">Join voice</button>
+          <button id="muteBtn" class="ghost-btn" type="button">Mute</button>
+          <button id="deafenBtn" class="ghost-btn" type="button">Deafen</button>
+          <button id="refreshBtn" class="ghost-btn" type="button">Refresh</button>
         </div>
       </header>
 
-      <section id="voicePanel" class="voice-panel hidden">
+      <section class="voice-panel">
         <div class="voice-status">
           <div>
-            <strong>Voice chat</strong>
+            <strong>Voice participants</strong>
             <div id="voiceInfo">Not connected</div>
           </div>
-          <button id="leaveVoiceBtn" class="ghost-btn">Leave voice</button>
+          <button id="leaveVoiceBtn" class="ghost-btn" type="button">Leave voice</button>
         </div>
         <div id="voicePeers" class="voice-peers"></div>
       </section>
@@ -95,7 +94,7 @@
       <section id="messageList" class="message-list"></section>
 
       <form id="messageForm" class="message-form">
-        <input id="messageInput" name="content" placeholder="Message..." autocomplete="off" />
+        <input id="messageInput" name="content" placeholder="Message the room..." autocomplete="off" />
         <button type="submit">Send</button>
       </form>
     </main>

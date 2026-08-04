@@ -1,7 +1,7 @@
 {
   "name": "pulsecord",
-  "version": "1.0.0",
-  "description": "Discord-style Node.js chat app with accounts, servers, DMs, and voice chat signaling.",
+  "version": "2.0.0",
+  "description": "Discord-style Node.js voice chat app with accounts and live updates.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

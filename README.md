@@ -2,27 +2,22 @@
 
 A Discord-style Node.js app with:
 
-- Account creation and login
-- Servers and channels
-- Direct messages
-- Live message updates with Socket.IO
-- Voice-chat signaling with WebRTC
+- account creation and login
+- case-insensitive unique usernames
+- username rules: 1–20 characters, letters/numbers/`_`/`-`
+- password rules: 6–20 characters, letters/numbers/`_`/`-`
+- confirm password on sign up and login
+- password visibility toggle on both forms
+- a single global voice room
+- mute and deafen controls
+- live messages for all signed-in accounts
+- searchable and sortable account list with created date
 
-## Run it
+## Run
 
 ```bash
 npm install
 npm start
 ```
 
-Open:
-
-```bash
-http://localhost:3000
-```
-
-## Notes
-
-- `index.html` lives in the project root as requested.
-- Voice chat is the browser WebRTC version. It works best for small groups and needs microphone permission.
-- Data is stored locally in `db.json`.
+Then open `http://localhost:3000`.
