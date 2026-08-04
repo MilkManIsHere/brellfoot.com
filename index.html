@@ -13,13 +13,13 @@
         <div class="logo-mark">▶</div>
         <div>
           <div class="brand-title">RetroTube</div>
-          <div class="brand-subtitle">Old-school video sharing</div>
+          <div class="brand-subtitle">2006-style video sharing</div>
         </div>
       </div>
 
       <div class="auth-tabs">
-        <button id="tabLogin" class="active">Login</button>
-        <button id="tabSignup">Sign up</button>
+        <button id="tabLogin" class="active" type="button">Login</button>
+        <button id="tabSignup" type="button">Sign up</button>
       </div>
 
       <form id="loginForm" class="auth-form">
@@ -49,7 +49,7 @@
       </form>
 
       <div id="authError" class="auth-error"></div>
-      <div class="auth-note">Usernames: 1–20 chars, letters/numbers/_/-. Passwords: 6–20 chars, same character set.</div>
+      <div class="auth-note">Usernames: 1–20 chars using letters, numbers, _ or -. Passwords: 6–20 chars using the same character set.</div>
     </div>
   </div>
 
@@ -57,8 +57,8 @@
     <header class="topbar">
       <div class="topbar-inner">
         <div class="logo-wrap">
-          <div class="yt-logo">RetroTube</div>
-          <div class="date-pill">2006 style</div>
+          <div class="yt-logo">You<span>Tube</span></div>
+          <div class="date-pill">beta 2006</div>
         </div>
         <form id="searchForm" class="searchbar">
           <input id="searchInput" type="text" placeholder="Search videos" autocomplete="off" />
@@ -66,73 +66,28 @@
         </form>
         <div class="user-chip">
           <span id="meLabel"></span>
-          <button id="logoutBtn" class="small-btn">Logout</button>
+          <button id="logoutBtn" class="small-btn" type="button">Logout</button>
         </div>
       </div>
-      <nav class="navrow">
-        <a href="#" class="navlink active">Home</a>
-        <a href="#" class="navlink">Videos</a>
-        <a href="#" class="navlink">Channels</a>
-        <a href="#" class="navlink">Upload</a>
+      <nav class="navrow" aria-label="Primary">
+        <button class="navlink active" data-view="home" type="button">Home</button>
+        <button class="navlink" data-view="videos" type="button">Videos</button>
+        <button class="navlink" data-view="channels" type="button">Channels</button>
+        <button class="navlink" data-view="upload" type="button">Upload</button>
       </nav>
     </header>
 
-    <div class="layout">
-      <aside class="sidebar left">
-        <div class="box">
-          <div class="box-title">Browse</div>
-          <button id="refreshBtn" class="wide-btn">Refresh feed</button>
-        </div>
+    <main class="layout">
+      <section id="homeView" class="view box view-home">
+        <div class="view-pad empty-home">Home is empty for now.</div>
+      </section>
 
-        <div class="box">
-          <div class="box-title">Members</div>
-          <div class="filter-row">
-            <input id="accountSearch" class="mini-input" type="text" placeholder="Search accounts" />
-            <select id="accountSort" class="mini-input">
-              <option value="created-desc">Newest first</option>
-              <option value="created-asc">Oldest first</option>
-              <option value="name-asc">A to Z</option>
-              <option value="name-desc">Z to A</option>
-            </select>
-          </div>
-          <div id="accountList" class="account-list"></div>
-        </div>
-      </aside>
-
-      <main class="main">
-        <section class="hero box">
-          <div class="hero-copy">
-            <div class="hero-kicker">Upload videos up to 1 GB</div>
-            <h1>Share clips in a 2006-style layout.</h1>
-            <p>Browse uploads, watch videos, leave comments, and see updates live across every signed-in account.</p>
-          </div>
-          <div class="hero-panel">
-            <form id="uploadForm" class="upload-form">
-              <div class="form-grid">
-                <div>
-                  <label>Title</label>
-                  <input name="title" maxlength="120" required />
-                </div>
-                <div>
-                  <label>Video file</label>
-                  <input id="videoFile" name="video" type="file" accept="video/*" required />
-                </div>
-              </div>
-              <div>
-                <label>Description</label>
-                <textarea name="description" rows="4" maxlength="1000"></textarea>
-              </div>
-              <div class="upload-meta">Maximum upload size: 1 GB</div>
-              <button type="submit">Upload video</button>
-            </form>
-          </div>
-        </section>
-
-        <section class="content-grid">
+      <section id="videosView" class="view hidden">
+        <div class="content-grid">
           <div class="box feed-box">
             <div class="section-head">
               <div>
-                <div class="box-title">Featured uploads</div>
+                <div class="box-title">Featured videos</div>
                 <div id="feedMeta" class="muted small"></div>
               </div>
             </div>
@@ -143,9 +98,8 @@
             <div class="section-head">
               <div>
                 <div class="box-title" id="watchTitle">Select a video</div>
-                <div id="watchMeta" class="muted small">Pick a video from the feed.</div>
+                <div id="watchMeta" class="muted small">Pick a video from the list.</div>
               </div>
-              <button id="loadLatestBtn" class="small-btn">Latest</button>
             </div>
             <video id="player" class="player" controls playsinline></video>
             <div id="watchDesc" class="watch-desc muted"></div>
@@ -156,9 +110,59 @@
             </form>
             <div id="commentList" class="comment-list"></div>
           </div>
-        </section>
-      </main>
-    </div>
+        </div>
+      </section>
+
+      <section id="channelsView" class="view hidden">
+        <div class="box view-pad">
+          <div class="section-head">
+            <div>
+              <div class="box-title">Channels</div>
+              <div class="muted small">Search and sort accounts.</div>
+            </div>
+          </div>
+          <div class="filter-row filter-inline">
+            <input id="accountSearch" class="mini-input" type="text" placeholder="Search account names" />
+            <select id="accountSort" class="mini-input">
+              <option value="created-desc">Newest first</option>
+              <option value="created-asc">Oldest first</option>
+              <option value="name-asc">A to Z</option>
+              <option value="name-desc">Z to A</option>
+            </select>
+          </div>
+          <div id="accountList" class="account-list"></div>
+        </div>
+      </section>
+
+      <section id="uploadView" class="view hidden">
+        <div class="box view-pad upload-shell">
+          <div class="section-head">
+            <div>
+              <div class="box-title">Upload</div>
+              <div class="muted small">File size limit: 20 MB. Video length limit: 20 minutes.</div>
+            </div>
+          </div>
+          <form id="uploadForm" class="upload-form">
+            <div class="form-grid">
+              <div>
+                <label>Title</label>
+                <input name="title" maxlength="120" required />
+              </div>
+              <div>
+                <label>Video file</label>
+                <input id="videoFile" name="video" type="file" accept="video/*" required />
+              </div>
+            </div>
+            <div>
+              <label>Description</label>
+              <textarea name="description" rows="4" maxlength="1000"></textarea>
+            </div>
+            <div id="durationHint" class="upload-meta">Choose a video to check its duration before upload.</div>
+            <button type="submit">Upload video</button>
+          </form>
+        </div>
+      </section>
+    </main>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>

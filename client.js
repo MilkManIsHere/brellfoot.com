@@ -1,14 +1,19 @@
 const socket = io();
-const MAX_BYTES = 1024 * 1024 * 1024;
+const MAX_BYTES = 20 * 1024 * 1024;
+const MAX_SECONDS = 20 * 60;
 
 const state = {
   me: null,
   videos: [],
   users: [],
   currentVideoId: null,
+  currentVideoSource: '',
+  currentPlaybackTime: 0,
+  currentPlaybackPaused: true,
   search: '',
   accountSearch: '',
-  accountSort: 'created-desc'
+  accountSort: 'created-desc',
+  view: 'home'
 };
 
 const el = {
@@ -23,9 +28,14 @@ const el = {
   logoutBtn: document.getElementById('logoutBtn'),
   searchForm: document.getElementById('searchForm'),
   searchInput: document.getElementById('searchInput'),
-  refreshBtn: document.getElementById('refreshBtn'),
+  navLinks: [...document.querySelectorAll('[data-view]')],
+  homeView: document.getElementById('homeView'),
+  videosView: document.getElementById('videosView'),
+  channelsView: document.getElementById('channelsView'),
+  uploadView: document.getElementById('uploadView'),
   uploadForm: document.getElementById('uploadForm'),
   videoFile: document.getElementById('videoFile'),
+  durationHint: document.getElementById('durationHint'),
   accountSearch: document.getElementById('accountSearch'),
   accountSort: document.getElementById('accountSort'),
   accountList: document.getElementById('accountList'),
@@ -35,7 +45,6 @@ const el = {
   watchMeta: document.getElementById('watchMeta'),
   watchDesc: document.getElementById('watchDesc'),
   player: document.getElementById('player'),
-  loadLatestBtn: document.getElementById('loadLatestBtn'),
   commentForm: document.getElementById('commentForm'),
   commentList: document.getElementById('commentList')
 };
@@ -43,7 +52,10 @@ const el = {
 function api(url, options = {}) {
   return fetch(url, {
     credentials: 'same-origin',
-    headers: { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) },
+    headers: {
+      ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(options.headers || {})
+    },
     ...options
   }).then(async res => {
     const data = await res.json().catch(() => ({}));
@@ -54,6 +66,29 @@ function api(url, options = {}) {
 
 function fmtDate(iso) {
   return iso ? new Date(iso).toLocaleString() : 'Unknown';
+}
+
+function fmtDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return 'Unknown length';
+  const total = Math.round(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function escapeHtml(text = '') {
+  return String(text)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function usernameBadge(name) {
+  return (name || '?').trim().slice(0, 1).toUpperCase();
 }
 
 function showError(message = '') {
@@ -74,23 +109,33 @@ function showApp() {
   el.app.classList.remove('hidden');
 }
 
-function setPasswordVisibility(form, visible) {
-  form.querySelectorAll('input[type="password"], input[data-kind="password"]').forEach(input => {
-    input.type = visible ? 'text' : 'password';
-    input.dataset.kind = 'password';
-  });
-}
-
 function wirePasswordToggle(form) {
-  form.querySelectorAll('input[name="password"], input[name="confirmPassword"]').forEach(input => {
-    input.dataset.kind = 'password';
-  });
   const checkbox = form.querySelector('.password-visibility');
-  checkbox.addEventListener('change', () => setPasswordVisibility(form, checkbox.checked));
+  const inputs = [...form.querySelectorAll('input[name="password"], input[name="confirmPassword"]')];
+  const setVisible = visible => {
+    inputs.forEach(input => {
+      input.type = visible ? 'text' : 'password';
+    });
+  };
+  checkbox.addEventListener('change', () => setVisible(checkbox.checked));
 }
 
-function usernameBadge(name) {
-  return (name || '?').trim().slice(0, 1).toUpperCase();
+function renderViewTabs() {
+  const views = {
+    home: el.homeView,
+    videos: el.videosView,
+    channels: el.channelsView,
+    upload: el.uploadView
+  };
+  Object.entries(views).forEach(([key, node]) => {
+    node.classList.toggle('hidden', state.view !== key);
+  });
+  el.navLinks.forEach(btn => btn.classList.toggle('active', btn.dataset.view === state.view));
+}
+
+function setView(view) {
+  state.view = view;
+  renderViewTabs();
 }
 
 function renderUsers() {
@@ -108,7 +153,7 @@ function renderUsers() {
 
   el.accountList.innerHTML = '';
   if (!users.length) {
-    el.accountList.innerHTML = '<div class="empty">No accounts found.</div>';
+    el.accountList.innerHTML = '<div class="empty">No channels found.</div>';
     return;
   }
 
@@ -116,8 +161,11 @@ function renderUsers() {
     const card = document.createElement('div');
     card.className = 'account-card';
     card.innerHTML = `
-      <div class="account-name">@${user.username} ${user.id === state.me?.id ? '(you)' : ''}</div>
-      <div class="account-meta">Created ${fmtDate(user.createdAt)}</div>
+      <div class="account-badge">${escapeHtml(usernameBadge(user.username))}</div>
+      <div class="account-body">
+        <div class="account-name">@${escapeHtml(user.username)}${user.id === state.me?.id ? ' (you)' : ''}</div>
+        <div class="account-meta">Created ${fmtDate(user.createdAt)}</div>
+      </div>
     `;
     el.accountList.appendChild(card);
   }
@@ -134,7 +182,7 @@ function renderVideos() {
   el.videoFeed.innerHTML = '';
 
   if (!videos.length) {
-    el.videoFeed.innerHTML = '<div class="empty">No videos match that search.</div>';
+    el.videoFeed.innerHTML = '<div class="empty">No videos yet.</div>';
     return;
   }
 
@@ -142,13 +190,13 @@ function renderVideos() {
     const card = document.createElement('div');
     card.className = 'video-card';
     card.innerHTML = `
-      <div class="thumb" data-letter="${usernameBadge(video.title)}"></div>
+      <div class="thumb" data-letter="${escapeHtml(usernameBadge(video.title))}"></div>
       <div>
         <div class="video-title">${escapeHtml(video.title)}</div>
-        <div class="video-meta">by @${escapeHtml(video.author?.username || 'unknown')} • ${fmtDate(video.createdAt)} • ${(video.size / (1024 * 1024)).toFixed(1)} MB</div>
+        <div class="video-meta">by @${escapeHtml(video.author?.username || 'unknown')} • ${fmtDate(video.createdAt)} • ${(video.size / (1024 * 1024)).toFixed(1)} MB • ${fmtDuration(video.duration)}</div>
         <div class="video-desc">${escapeHtml(video.description || 'No description.')}</div>
-        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="small-btn" data-open-video="${video.id}">Watch</button>
+        <div class="video-actions">
+          <button class="small-btn" data-open-video="${video.id}" type="button">Watch</button>
         </div>
       </div>
     `;
@@ -156,30 +204,57 @@ function renderVideos() {
   }
 
   el.videoFeed.querySelectorAll('[data-open-video]').forEach(btn => {
-    btn.addEventListener('click', () => loadVideo(btn.dataset.openVideo));
+    btn.addEventListener('click', () => loadVideo(btn.dataset.openVideo, { forceSeek: true }));
   });
 }
 
-function renderCurrent(video) {
+function renderCurrent(video, { preservePlayback = false } = {}) {
+  const previouslyPlaying = !el.player.paused;
+  const keepSource = preservePlayback && video && state.currentVideoSource === video.filename;
+  const savedTime = preservePlayback ? state.currentPlaybackTime : 0;
+
   if (!video) {
     el.watchTitle.textContent = 'Select a video';
-    el.watchMeta.textContent = 'Pick a video from the feed.';
+    el.watchMeta.textContent = 'Pick a video from the list.';
     el.watchDesc.textContent = '';
     el.player.removeAttribute('src');
     el.player.load();
     el.commentList.innerHTML = '';
+    state.currentVideoSource = '';
     return;
   }
 
   el.watchTitle.textContent = video.title;
-  el.watchMeta.textContent = `by @${video.author?.username || 'unknown'} • ${fmtDate(video.createdAt)} • ${(video.size / (1024 * 1024)).toFixed(1)} MB`;
+  el.watchMeta.textContent = `by @${video.author?.username || 'unknown'} • ${fmtDate(video.createdAt)} • ${(video.size / (1024 * 1024)).toFixed(1)} MB • ${fmtDuration(video.duration)}`;
   el.watchDesc.textContent = video.description || 'No description.';
-  el.player.src = `/uploads/${encodeURIComponent(video.filename)}`;
+
+  const needsSourceChange = !keepSource && state.currentVideoSource !== video.filename;
+  if (needsSourceChange) {
+    state.currentVideoSource = video.filename;
+    el.player.src = `/uploads/${encodeURIComponent(video.filename)}`;
+    el.player.load();
+  }
+
+  if (!preservePlayback || needsSourceChange) {
+    const restoreOnce = () => {
+      if (preservePlayback && Number.isFinite(savedTime) && savedTime > 0) {
+        try {
+          el.player.currentTime = Math.min(savedTime, Math.max(0, el.player.duration || savedTime));
+        } catch {}
+      }
+      if (preservePlayback && previouslyPlaying) {
+        el.player.play().catch(() => {});
+      }
+    };
+    el.player.addEventListener('loadedmetadata', restoreOnce, { once: true });
+  }
+
   el.commentList.innerHTML = '';
   if (!video.comments?.length) {
     el.commentList.innerHTML = '<div class="empty">No comments yet.</div>';
     return;
   }
+
   for (const comment of video.comments) {
     const item = document.createElement('div');
     item.className = 'comment';
@@ -192,15 +267,6 @@ function renderCurrent(video) {
     `;
     el.commentList.appendChild(item);
   }
-}
-
-function escapeHtml(text = '') {
-  return String(text)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
 }
 
 async function refreshMe() {
@@ -221,40 +287,54 @@ async function refreshVideos() {
   renderVideos();
   if (state.currentVideoId) {
     const current = state.videos.find(v => v.id === state.currentVideoId);
-    renderCurrent(current || null);
+    if (current) renderCurrent(current, { preservePlayback: true });
   }
 }
 
-async function loadVideo(id) {
+async function loadVideo(id, { forceSeek = false } = {}) {
   const data = await api(`/api/videos/${encodeURIComponent(id)}`);
   state.currentVideoId = id;
-  renderCurrent(data.video);
-}
-
-async function loadLatest() {
-  if (!state.videos.length) return;
-  await loadVideo(state.videos[0].id);
+  renderCurrent(data.video, { preservePlayback: !forceSeek });
 }
 
 async function bootstrap() {
   try {
     await refreshMe();
     showApp();
+    renderViewTabs();
     await Promise.all([refreshUsers(), refreshVideos()]);
-    if (state.videos.length) await loadVideo(state.videos[0].id);
+    if (state.videos.length) {
+      state.view = 'videos';
+      renderViewTabs();
+      await loadVideo(state.videos[0].id, { forceSeek: true });
+    }
   } catch {
     showAuth(true);
   }
 }
 
+function savePlaybackTick() {
+  if (!state.currentVideoId) return;
+  if (el.player.duration && Number.isFinite(el.player.currentTime)) {
+    state.currentPlaybackTime = el.player.currentTime;
+    state.currentPlaybackPaused = el.player.paused;
+  }
+}
+
 el.tabLogin.addEventListener('click', () => { showError(''); showAuth(true); });
 el.tabSignup.addEventListener('click', () => { showError(''); showAuth(false); });
+[el.loginForm, el.signupForm].forEach(form => wirePasswordToggle(form));
 
-[el.loginForm, el.signupForm].forEach(form => {
-  wirePasswordToggle(form);
+el.navLinks.forEach(btn => {
+  btn.addEventListener('click', () => {
+    setView(btn.dataset.view);
+    if (btn.dataset.view === 'videos' && !state.currentVideoId && state.videos.length) {
+      loadVideo(state.videos[0].id, { forceSeek: true }).catch(() => {});
+    }
+  });
 });
 
-el.loginForm.addEventListener('submit', async (e) => {
+el.loginForm.addEventListener('submit', async e => {
   e.preventDefault();
   showError('');
   const fd = new FormData(el.loginForm);
@@ -273,7 +353,7 @@ el.loginForm.addEventListener('submit', async (e) => {
   }
 });
 
-el.signupForm.addEventListener('submit', async (e) => {
+el.signupForm.addEventListener('submit', async e => {
   e.preventDefault();
   showError('');
   const fd = new FormData(el.signupForm);
@@ -297,7 +377,7 @@ el.logoutBtn.addEventListener('click', async () => {
   location.reload();
 });
 
-el.searchForm.addEventListener('submit', (e) => {
+el.searchForm.addEventListener('submit', e => {
   e.preventDefault();
   state.search = el.searchInput.value;
   renderVideos();
@@ -318,20 +398,67 @@ el.accountSort.addEventListener('change', () => {
   renderUsers();
 });
 
-el.refreshBtn.addEventListener('click', async () => {
-  await Promise.all([refreshUsers(), refreshVideos()]);
+el.videoFile.addEventListener('change', async () => {
+  const file = el.videoFile.files?.[0];
+  if (!file) {
+    el.durationHint.textContent = 'Choose a video to check its duration before upload.';
+    return;
+  }
+  if (file.size > MAX_BYTES) {
+    el.durationHint.textContent = 'This file is too large. The limit is 20 MB.';
+    return;
+  }
+
+  const url = URL.createObjectURL(file);
+  const probe = document.createElement('video');
+  probe.preload = 'metadata';
+  probe.src = url;
+  probe.onloadedmetadata = () => {
+    const seconds = probe.duration;
+    URL.revokeObjectURL(url);
+    if (Number.isFinite(seconds)) {
+      el.durationHint.textContent = `Duration: ${fmtDuration(seconds)}. Maximum allowed: 20:00.`;
+    } else {
+      el.durationHint.textContent = 'Could not read duration. Maximum allowed: 20:00.';
+    }
+  };
+  probe.onerror = () => {
+    URL.revokeObjectURL(url);
+    el.durationHint.textContent = 'Could not read duration. Maximum allowed: 20:00.';
+  };
 });
 
-el.loadLatestBtn.addEventListener('click', async () => {
-  await loadLatest();
-});
-
-el.uploadForm.addEventListener('submit', async (e) => {
+el.uploadForm.addEventListener('submit', async e => {
   e.preventDefault();
   const fd = new FormData(el.uploadForm);
-  const file = el.videoFile.files[0];
-  if (!file) return alert('Choose a video file first.');
-  if (file.size > MAX_BYTES) return alert('That file is larger than 1 GB.');
+  const file = fd.get('video');
+  if (!(file instanceof File)) return;
+  if (file.size > MAX_BYTES) {
+    alert('File is larger than 20 MB.');
+    return;
+  }
+
+  const duration = await new Promise(resolve => {
+    const url = URL.createObjectURL(file);
+    const probe = document.createElement('video');
+    probe.preload = 'metadata';
+    probe.src = url;
+    probe.onloadedmetadata = () => {
+      const value = probe.duration;
+      URL.revokeObjectURL(url);
+      resolve(Number.isFinite(value) ? value : null);
+    };
+    probe.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+  });
+
+  if (duration != null && duration > MAX_SECONDS) {
+    alert('Video must be 20 minutes or shorter.');
+    return;
+  }
+
   try {
     const upload = new FormData();
     upload.append('title', fd.get('title'));
@@ -341,17 +468,19 @@ el.uploadForm.addEventListener('submit', async (e) => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Upload failed');
     el.uploadForm.reset();
-    await refreshVideos();
-    await refreshUsers();
-    await loadVideo(data.video.id);
+    el.durationHint.textContent = 'Choose a video to check its duration before upload.';
+    await Promise.all([refreshUsers(), refreshVideos()]);
+    state.view = 'videos';
+    renderViewTabs();
+    await loadVideo(data.video.id, { forceSeek: true });
   } catch (err) {
     alert(err.message);
   }
 });
 
-el.commentForm.addEventListener('submit', async (e) => {
+el.commentForm.addEventListener('submit', async e => {
   e.preventDefault();
-  if (!state.currentVideoId) return alert('Pick a video first.');
+  if (!state.currentVideoId) return;
   const fd = new FormData(el.commentForm);
   const comment = String(fd.get('comment') || '').trim();
   if (!comment) return;
@@ -362,19 +491,35 @@ el.commentForm.addEventListener('submit', async (e) => {
     });
     el.commentForm.reset();
     await refreshVideos();
-    await loadVideo(state.currentVideoId);
+    const current = state.videos.find(v => v.id === state.currentVideoId);
+    if (current) renderCurrent(current, { preservePlayback: true });
   } catch (err) {
     alert(err.message);
   }
 });
 
+el.player.addEventListener('timeupdate', savePlaybackTick);
+el.player.addEventListener('pause', savePlaybackTick);
+el.player.addEventListener('play', savePlaybackTick);
+el.player.addEventListener('seeking', savePlaybackTick);
+el.player.addEventListener('seeked', savePlaybackTick);
+el.player.addEventListener('ended', savePlaybackTick);
+
 socket.on('library:update', async () => {
+  const currentId = state.currentVideoId;
   await Promise.all([refreshUsers(), refreshVideos()]);
+  if (currentId && state.currentVideoId === currentId) {
+    const current = state.videos.find(v => v.id === currentId);
+    if (current) renderCurrent(current, { preservePlayback: true });
+  }
 });
 
-socket.on('video:changed', async (videoId) => {
+socket.on('video:changed', async videoId => {
   await refreshVideos();
-  if (state.currentVideoId === videoId) await loadVideo(videoId);
+  if (state.currentVideoId === videoId) {
+    const current = state.videos.find(v => v.id === videoId);
+    if (current) renderCurrent(current, { preservePlayback: true });
+  }
 });
 
 setInterval(() => {

@@ -5,6 +5,7 @@ const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
+const { execFileSync } = require('child_process');
 const { Server } = require('socket.io');
 
 const app = express();
@@ -15,7 +16,8 @@ const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
 const DATA_FILE = path.join(ROOT, 'data.json');
 const UPLOAD_DIR = path.join(ROOT, 'uploads');
-const MAX_UPLOAD_BYTES = 1024 * 1024 * 1024; // 1 GB
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20 MB
+const MAX_VIDEO_SECONDS = 20 * 60; // 20 minutes
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -79,6 +81,7 @@ function publicVideo(video) {
     filename: video.filename,
     mimeType: video.mimeType,
     size: video.size,
+    duration: video.duration,
     createdAt: video.createdAt,
     author: publicUser(author),
     comments: comments.map(publicComment)
@@ -112,7 +115,7 @@ app.use(express.static(ROOT));
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || '').slice(0, 16);
+    const ext = path.extname(file.originalname || '').slice(0, 16).toLowerCase();
     cb(null, `${uid('vid_')}${ext || '.bin'}`);
   }
 });
@@ -132,6 +135,31 @@ function emitLibraryUpdate() {
 
 function emitVideoChanged(videoId) {
   io.emit('video:changed', videoId);
+}
+
+function probeDurationSeconds(filePath) {
+  try {
+    const out = execFileSync('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'json',
+      filePath
+    ], { encoding: 'utf8' });
+    const parsed = JSON.parse(out);
+    const duration = Number(parsed?.format?.duration);
+    return Number.isFinite(duration) ? duration : null;
+  } catch (err) {
+    console.error('ffprobe failed:', err.message);
+    return null;
+  }
+}
+
+function deleteFileSafe(filePath) {
+  try {
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (err) {
+    console.error('Failed to delete file:', err.message);
+  }
 }
 
 app.get('/', (_req, res) => {
@@ -223,7 +251,7 @@ app.post('/api/upload', authRequired, (req, res) => {
   upload.single('video')(req, res, err => {
     if (err) {
       const message = err.code === 'LIMIT_FILE_SIZE'
-        ? 'File is larger than 1 GB'
+        ? 'File is larger than 20 MB'
         : err.message || 'Upload failed';
       return res.status(400).json({ error: message });
     }
@@ -233,6 +261,12 @@ app.post('/api/upload', authRequired, (req, res) => {
     if (!title) return res.status(400).json({ error: 'Title is required' });
     if (!req.file) return res.status(400).json({ error: 'Video file is required' });
 
+    const duration = probeDurationSeconds(req.file.path);
+    if (duration != null && duration > MAX_VIDEO_SECONDS) {
+      deleteFileSafe(req.file.path);
+      return res.status(400).json({ error: 'Video must be 20 minutes or shorter' });
+    }
+
     const video = {
       id: uid('vid_'),
       userId: req.user.id,
@@ -241,6 +275,7 @@ app.post('/api/upload', authRequired, (req, res) => {
       filename: req.file.filename,
       mimeType: req.file.mimetype,
       size: req.file.size,
+      duration: duration == null ? null : Math.round(duration),
       createdAt: new Date().toISOString()
     };
 
