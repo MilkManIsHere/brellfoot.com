@@ -5,43 +5,37 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
-
-// Serve files from the root directory
 app.use(express.static(__dirname));
 
 let posts = [];
 
 app.get("/api/posts", (req, res) => {
-    res.json(posts);
+  res.json(posts);
 });
 
 app.post("/api/posts", (req, res) => {
-    const text = (req.body.text || "").trim();
+  const text = (req.body.text || "").trim();
+  if (!text) return res.status(400).json({ error: "Message required" });
 
-    if (!text) {
-        return res.status(400).json({ error: "Message required" });
-    }
+  const post = {
+    id: Date.now().toString(),
+    text,
+    time: Date.now()
+  };
 
-    const post = {
-        id: Date.now(),
-        text,
-        time: Date.now()
-    };
-
-    posts.push(post);
-    res.json(post);
+  posts.push(post);
+  res.json(post);
 });
 
 app.delete("/api/posts", (req, res) => {
-    posts = [];
-    res.json({ success: true });
+  posts = [];
+  res.json({ ok: true });
 });
 
-// Open index.html when visiting /
 app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "index.html"));
+  res.sendFile(path.join(__dirname, "index.html"));
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
