@@ -1,67 +1,51 @@
-let posts = JSON.parse(localStorage.getItem("posts")) || [];
-
-function save(){
-    localStorage.setItem("posts", JSON.stringify(posts));
+async function loadPosts() {
+  const res = await fetch("/api/posts");
+  return await res.json();
 }
 
-function render(){
+async function render() {
+  const posts = await loadPosts();
+  const container = document.getElementById("posts");
+  container.innerHTML = "";
 
-    const container = document.getElementById("posts");
-    container.innerHTML = "";
-
-    posts.slice().reverse().forEach(post=>{
-
-        const div = document.createElement("div");
-        div.className = "post";
-
-        div.innerHTML = `
-            <small>Anonymous • ${new Date(post.time).toLocaleString()}</small>
-            <p>${escapeHTML(post.text)}</p>
-        `;
-
-        container.appendChild(div);
-
-    });
-
+  posts.slice().reverse().forEach(post => {
+    const div = document.createElement("div");
+    div.className = "post";
+    div.innerHTML = `
+      <small>Anonymous • ${new Date(post.time).toLocaleString()}</small>
+      <p>${escapeHTML(post.text)}</p>
+    `;
+    container.appendChild(div);
+  });
 }
 
-function postMessage(){
+async function postMessage() {
+  const box = document.getElementById("message");
+  const text = box.value.trim();
+  if (!text) return;
 
-    const box = document.getElementById("message");
+  await fetch("/api/posts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text })
+  });
 
-    if(box.value.trim()==="") return;
-
-    posts.push({
-        text:box.value,
-        time:Date.now()
-    });
-
-    save();
-    render();
-
-    box.value="";
-
+  box.value = "";
+  render();
 }
 
-function clearPosts(){
+async function clearPosts() {
+  if (!confirm("Delete all posts?")) return;
 
-    if(confirm("Delete all posts?")){
-
-        posts=[];
-        save();
-        render();
-
-    }
-
+  await fetch("/api/posts", { method: "DELETE" });
+  render();
 }
 
-function escapeHTML(text){
-
-    return text
-        .replace(/&/g,"&amp;")
-        .replace(/</g,"&lt;")
-        .replace(/>/g,"&gt;");
-
+function escapeHTML(text) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 render();
