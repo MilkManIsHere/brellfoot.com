@@ -1,23 +1,55 @@
-<body bgcolor="#cccccc">
-	<table align="center" bgcolor="#000000" width="800">
-		<tr bgcolor="#ffffff">
-			<td align="center" colspan="2">
-				<font face="sans-serif" size="7"><b>brellfoot.com</b></font>
-			</td>
-		</tr>
-		<tr bgcolor="#ffffff">
-			<td align="center">
-				<a href="index.html"><button><font face="sans-serif" size="5">Joe.bat</font></button></a>
-				<a href="second.html"><button><font face="sans-serif" size="5">Joe.bat V2</font></button></a>
-				<a href="remade.html"><button><font face="sans-serif" size="5">Joe.bat Remade</font></button></a>
-				<a href="lost.html"><button><font face="sans-serif" size="5">Lost Media</font></button></a>
-				<a href="origin.html"><button><font face="sans-serif" size="5">Origin</font></button></a>
-			</td>
-		</tr>
-		<tr bgcolor="#ffffff">
-			<td>
-				<font face="sans-serif" size="4">Start:<br>When I run Joe.bat, my pc started to spark and my pc was smelling like smoke because my pc was smoking a foot.<br><br>30 Seconds in:<br>I started to noticed my pc stop working then I remember that I was using bowman's pc so it cought on fire and blow up. I'll donate $1 to help you get a new one.</font>
-			</td>
-		</tr>
-	</table>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Anon Board</title>
+    <style>
+        body{
+            font-family:Arial,sans-serif;
+            background:#222;
+            color:white;
+            max-width:700px;
+            margin:auto;
+            padding:20px;
+        }
+
+        textarea{
+            width:100%;
+            height:100px;
+            margin-bottom:10px;
+        }
+
+        button{
+            padding:10px 20px;
+            cursor:pointer;
+        }
+
+        .post{
+            background:#333;
+            padding:10px;
+            margin-top:10px;
+            border-radius:5px;
+            white-space:pre-wrap;
+        }
+
+        small{
+            color:#aaa;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Anon Board</h1>
+
+<textarea id="message" placeholder="Write something..."></textarea>
+<br>
+<button onclick="postMessage()">Post</button>
+<button onclick="clearPosts()">Clear</button>
+
+<hr>
+
+<div id="posts"></div>
+
+<script src="script.js"></script>
+
 </body>
+</html>
